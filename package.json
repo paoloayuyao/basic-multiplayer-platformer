@@ -1,0 +1,27 @@
+{
+  "name": "modestmultiplayerplatformer",
+  "version": "1.0.0",
+  "description": "a modest multiplayer game built with phaser.io, node.js, and eureca.io",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "example",
+    "phaser",
+    "eureca",
+    "multiplayer",
+    "platformer",
+    "game"
+  ],
+  "author": "paolo-ayuyao",
+  "license": "MIT",
+  "dependencies": {
+	"express": "^4.13.4",
+	"eureca.io": "^0.6.42",
+	"engine.io": "^1.6.9"
+  },
+  "engines": {
+    "node": "4.4.4"
+  }
+}
