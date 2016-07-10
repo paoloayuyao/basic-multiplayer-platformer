@@ -10,6 +10,8 @@ var port = process.env.PORT || 8080;
 
 eurecaServer.attach(server);
 
+var count = 0;
+
 eurecaServer.onConnect(function (conn) {
     console.log('New Client id=%s ', conn.id, conn.remoteAddress);
 
@@ -61,13 +63,9 @@ eurecaServer.exports.handleKeys = function (state) {
 
     for (var c in clients) {
         var remote = clients[c].remote;
-        var remoteId = clients[c].id;
-        if (remoteId != updatedClient.id) {
-            remote.updateState(updatedClient.id, state);
-        }
+        remote.updateState(updatedClient.id, state);
+        clients[conn.id].lastState = state;
     }
-
-    clients[conn.id].lastState = state;
 
 }
 

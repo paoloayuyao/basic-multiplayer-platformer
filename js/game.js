@@ -1,12 +1,7 @@
-// initiate the game
-// x, y, rendering context, DOM element to attach to
-// followed by 4 essential Phaser functions
-// these 4 are then mapped to functions below
 
 var platforms;
 var bullets;
 
-var players;
 var player;
 
 var cursors;
@@ -19,7 +14,7 @@ var eurecaServer;
 
 var myId;
 
-var enemies;
+var enemies = {};
 
 function clientSetup() {
     var eurecaClient = new Eureca.Client();
@@ -35,33 +30,19 @@ function clientSetup() {
     }
 
     eurecaClient.exports.kill = function (id) {
-        enemies.forEach(function (enemy) {
-
-            if (enemy.remoteId == id) {
-                enemy.kill();
-                console.log('killing ', id);
-            }
-
-        }, this);
+        enemiesRegistry[id].kill();
     }
 
     eurecaClient.exports.spawnEnemy = function (id, x, y) {
         if (id == myId) return;
-
-        console.log('spawning an enemy:' + id + ' ' + x + ' ' + y);
-
-        var enemyPlayer = new Player(game, x, y);
-        enemyPlayer.remoteId = id;
-        enemies.add(enemyPlayer);
+        var enemy = new Player(game, x, y);
+        enemies[id] = enemy;
     }
 
     eurecaClient.exports.updateState = function (id, state) {
-        enemies.forEach(function (enemy) {
-            if (enemy.remoteId == id) {
-                console.log('updating!')
-                enemy.input = state;
-            }
-        }, this);
+        var enemy = enemies[id];
+        enemy.cursor = state;
+        enemy.update();
     }
 
 }
@@ -72,37 +53,21 @@ function preload() {
 }
 
 function loadAssets() {
-    // alias, path, x, y dimension
     game.load.spritesheet('player', 'assets/sprites/hero-transparent-borderless.png', 28, 28);
     game.load.spritesheet('slime', 'assets/sprites/slime-transparent-set-withdir.png', 28, 28);
-
-    // load images
     game.load.image('bg', 'assets/bg/wall.png');
     game.load.image('ground', 'assets/bg/ground.png');
     game.load.image('bullet', 'assets/sprites/red-square-bullet.png');
 }
 
 function create() {
-
-    console.log('ready!');
-
-    // activate physics engine
     game.physics.startSystem(Phaser.Physics.ARCADE);
-
-    // set the 'bg' object and repeat it across the screen
-    // start x, y, size x, y, reference
     game.add.tileSprite(0, 0, 640, 480);
-    // loading of assets is sequential and determines their z-index
-
-    enemies = game.add.group();
-    enemies.enableBody = true;
 
     bullets = game.add.group();
     bullets.enableBody = true;
 
-    // create a generic platform group
     platforms = game.add.group();
-    // enables physics to members of group
     platforms.enableBody = true;
 
     var ground = new Platform(game, 0, game.world.height - 16, 640, 16, 'ground');
@@ -126,16 +91,13 @@ function create() {
         item.body.allowGravity = false;
     }, this);
 
-    // activate arrow controls
     cursors = game.input.keyboard.createCursorKeys();
 
-    players = game.add.group();
-    players.enableBody = true;
-
-    // player is also an object now
     player = new Player(game, 0, 0);
-    player.remoteId = myId;
-    enemies.add(player);
+    enemies[myId] = player;
+
+    var sprite = player.sprite;
+    sprite.bringToTop();
 
 }
 
@@ -143,11 +105,20 @@ function update() {
 
     if (!ready)return;
 
-    // all inter-object interaction has been moved to their respective prototypes with the exception of:
-
     player.input.left = cursors.left.isDown;
     player.input.right = cursors.right.isDown;
     player.input.jump = cursors.up.isDown;
+    player.input.stop = !player.input.left && !player.input.right && !player.input.jump;
+
+    for (var i in enemies) {
+        if (!enemies[i]) continue;
+        var enemy = enemies[i];
+        var sprite = enemy.sprite;
+        if (sprite.alive) {
+            enemy.update();
+        }
+
+    }
 
 }
 
@@ -159,23 +130,33 @@ Platform.prototype = Object.create(Phaser.TileSprite.prototype);
 Platform.prototype.constructor = Platform;
 
 Player = function (game, x, y) {
-    Phaser.Sprite.call(this, game, x, y, "player");
 
     this.input = {
         left: false,
         right: false,
         jump: false,
-        stop: false,
-        fire: false
+        stop: false
     }
-    this.recentinput = {};
-    game.physics.enable(this, Phaser.Physics.ARCADE);
-    this.direction = 1;
-    this.body.bounce.y = 0.2;
-    this.body.gravity.y = 640;
-    this.body.collideWorldBounds = true;
-    this.animations.add('left', [5, 6, 7, 8, 9], 10, true);
-    this.animations.add('right', [0, 1, 2, 3, 4], 10, true);
+
+    this.cursor = {
+        left: false,
+        right: false,
+        jump: false,
+        stop: false
+    }
+
+    this.sprite = game.add.sprite(x, y, 'player');
+    this.sprite.id = myId;
+    this.sprite.x = x;
+    this.sprite.y = y;
+    game.physics.enable(this.sprite, Phaser.Physics.ARCADE);
+
+    this.sprite.direction = 1;
+    this.sprite.body.bounce.y = 0.2;
+    this.sprite.body.gravity.y = 640;
+    this.sprite.body.collideWorldBounds = true;
+    this.sprite.animations.add('left', [5, 6, 7, 8, 9], 10, true);
+    this.sprite.animations.add('right', [0, 1, 2, 3, 4], 10, true);
 
     // spaceBar = game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
     // spaceBar.onDown.add(this.attack, this);
@@ -186,42 +167,48 @@ Player.prototype = Object.create(Phaser.Sprite.prototype);
 Player.prototype.constructor = Player;
 
 Player.prototype.update = function () {
-    game.physics.arcade.collide(this, platforms);
-    this.handleMovement();
-};
+    game.physics.arcade.collide(this.sprite, platforms);
 
-Player.prototype.handleMovement = function () {
+    var inputChanged = (
+        this.cursor.left != this.input.left ||
+        this.cursor.right != this.input.right ||
+        this.cursor.jump != this.input.jump
+        );
 
-    this.body.velocity.x = 0;
-
-    if (this.input.left) {
-        //  Move to the left
-        this.body.velocity.x = -150;
-        this.direction = -1;
-        this.animations.play('left');
+    if (inputChanged) {
+        if (this.sprite.id == myId) {
+            this.input.x = this.sprite.x;
+            this.input.y = this.sprite.y;
+            eurecaServer.handleKeys(this.input);
+        }
     }
-    else if (this.input.right) {
-        //  Move to the right
-        this.body.velocity.x = 150;
-        this.direction = 1;
-        this.animations.play('right');
+
+    if(!this.cursor.stop){
+        if (this.cursor.left) {
+            this.sprite.body.velocity.x = -150;
+            this.sprite.direction = -1;
+            this.sprite.animations.play('left');
+        } else if (this.cursor.right) {
+            this.sprite.body.velocity.x = 150;
+            this.sprite.direction = 1;
+            this.sprite.animations.play('right');
+        }
+
+        if (this.sprite.body.velocity.x == 150) {
+            this.sprite.body.velocity.x -= 10;
+        }
+
+        if (this.cursor.jump && this.sprite.body.touching.down) {
+            this.sprite.body.velocity.y = -350;
+        }
     } else {
-        //  Stand still
-        this.animations.stop();
-        // set this if you want to reset the 'stance' of the player: player.frame = 4;
+        this.sprite.body.velocity.x = 0;
+        this.sprite.animations.stop();
     }
 
-    //  Allow the player to jump if they are touching the ground.
-    if (this.input.jump && this.body.touching.down) {
-        this.body.velocity.y = -350;
-    }
 
-    this.input.y = this.y;
-    this.input.x = this.x;
 
-    eurecaServer.handleKeys(this.input);
-
-}
+};
 
 Player.prototype.attack = function () {
     if (bullets.length < 5) {
